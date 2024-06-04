@@ -7,3 +7,5 @@ Python codes for
 4. Analysing droplet-in-droplet structures as ROI (set_roi.py)
 
 Examples of their usage can be found in the jupyter notebook file (example notebook.ipynb)
+
+Kanji Tomohara, 2024
