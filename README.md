@@ -19,5 +19,5 @@ OpenCV 4.6.0
 AICSImageIO 4.11.0  
 Library installation should take less than 10 minutes on a standard desktop computer.  
 
-The codes are available under a CC-BY-NC-ND 4.0 International license.  
+The codes are available under the MIT License. See the LICENSE file for details.  
 Kanji Tomohara, 2024
