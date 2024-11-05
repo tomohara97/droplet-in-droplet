@@ -106,7 +106,7 @@ class ImageViewer:
         fig.subplots_adjust(top=0.9, wspace=0.05)
         return fig, axes
 
-    def show_subplots(self, frame, show_chs, set_colors=None, show_position=True, saveimg=True, axes=None):
+    def show_subplots(self, frame, show_chs, set_colors=None, show_position=True, saveimg=True, axes=None, alphas=None):
         try:
             artists = []
             condition_dict = self.set_condition(self.condition_info_file)
@@ -124,16 +124,24 @@ class ImageViewer:
                 condition = condition_dict[dict_checked[scene_key]]
                 title = condition
                 if show_position:
-                    title = f'{condition} ({dict_checked[scene_key]})'
+                    title = f'{condition} \n({dict_checked[scene_key]})'
                 img_chs = self.lif_stack.get_image_data("CYX", Z=0, T=frame)
-                if self.bit_depth != np.uint8:
-                    conversion_factor = np.iinfo(self.bit_depth).max / np.iinfo(np.uint8).max
-                    img_chs = (img_chs/conversion_factor).astype(np.uint8)
+                if alphas is not None:
+                    # check if alphas is a list of floats and its length is equal to the number of channels
+                    if isinstance(alphas, list) and len(alphas) == len(show_chs):
+                        # zip show_chs and alphas by list comprehension
+                        for ch_num, alpha in zip(show_chs, alphas):
+                            # max of self.bit_depth, using np.iinfo(self.bit_depth).max
+                            max = np.iinfo(self.bit_depth).max
+                            img_chs[ch_num] = (img_chs[ch_num].astype(float) * alpha / max).astype(img_chs[ch_num].dtype)
+
+                    else:
+                        raise ValueError("alphas must be a list of floats and its length must be equal to the number of channels.")
                 l_overlay = [self.apply_cmap(img_chs[ch_num], self.get_color(self.ch_info_file)[ch_num]) for ch_num in show_chs]
                 if set_colors is not None:
                     l_overlay = [self.apply_cmap(img_chs[ch_num], color) for ch_num, color in zip(show_chs, set_colors)]
                 showing_img = np.sum(l_overlay, axis=0)
-                showing_img = np.clip(showing_img, 0, 255).astype(np.uint8)
+                #showing_img = np.clip(showing_img, 0, 255).astype(np.uint8)
                 ax = plt.subplot(1, len(dict_checked), idx + 1)
                 ax.set_title(title)
                 ax.set_xticks([]) # Hide x-axis ticks

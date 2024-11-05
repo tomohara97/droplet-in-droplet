@@ -63,33 +63,36 @@ class core_shell_analysis:
                 markers[markers == marker] = 0
         return markers
 
-    def set_condition(self) -> dict:
-        condition_info = pd.read_csv(self.condition_info_file)
-        condition_dict = dict(zip(condition_info.scene, condition_info.condition))
-        return condition_dict
-    
-    def binarize(self, src_img, isInverted: bool, kernel_size_for_opening=2, opening_iterations=1, kernel_size=3, erosion_iterations=0, dialte_iterations=0):
+    def binarize(self, src_img, isInverted: bool, manual_thresh: int=None, kernel_size_for_opening=2, opening_iterations=1, kernel_size_for_diaero=3, erosion_iterations=0, dialte_iterations=0):
         if src_img.dtype == np.uint16:
             src_img = (src_img / 256).astype(np.uint8)
 
-        if isInverted:
-            thresh,bin_img = cv2.threshold(src_img,0,self.bit_depth_max,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+        if manual_thresh is None:
+            # Use Otsu's method if manual_thresh is not provided
+            if isInverted:
+                thresh, bin_img = cv2.threshold(src_img, 0, self.bit_depth_max, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            else:
+                thresh, bin_img = cv2.threshold(src_img, 0, self.bit_depth_max, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            #print('threshold:', thresh)
         else:
-            thresh,bin_img = cv2.threshold(src_img,0,self.bit_depth_max,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            if isInverted:
+                thresh, bin_img = cv2.threshold(src_img, manual_thresh, self.bit_depth_max, cv2.THRESH_BINARY_INV)
+            else:
+                thresh, bin_img = cv2.threshold(src_img, manual_thresh, self.bit_depth_max, cv2.THRESH_BINARY)
+        if erosion_iterations > 0: # erosion for shrinking ROIs
+            kernel = np.ones((kernel_size_for_diaero,kernel_size_for_diaero),np.uint8)
+            bin_img = cv2.erode(bin_img, kernel, iterations = erosion_iterations)
+        if dialte_iterations > 0:
+            kernel = np.ones((kernel_size_for_diaero,kernel_size_for_diaero),np.uint8)
+            bin_img = cv2.dilate(bin_img, kernel, iterations = dialte_iterations)
         if opening_iterations > 0: # opening for noise removal
             kernel = np.ones((kernel_size_for_opening,kernel_size_for_opening),np.uint8)
             bin_img = cv2.morphologyEx(bin_img,cv2.MORPH_OPEN,kernel,iterations = opening_iterations)
-        if erosion_iterations > 0: # erosion for shrinking ROIs
-            kernel = np.ones((kernel_size,kernel_size),np.uint8)
-            bin_img = cv2.erode(bin_img, kernel, iterations = erosion_iterations)
-        if dialte_iterations > 0:
-            kernel = np.ones((kernel_size,kernel_size),np.uint8)
-            bin_img = cv2.dilate(bin_img, kernel, iterations = dialte_iterations)
         return bin_img
 
-    def get_roi(self, src_img, isInverted: bool, kernel_size_for_opening, opening_iterations, kernel_size, erosion_iterations, dialte_iterations, dist_threshold=0.02):
+    def get_roi(self, src_img, isInverted: bool, kernel_size_for_opening, opening_iterations, kernel_size_for_diaero, erosion_iterations, dialte_iterations, dist_threshold=0.02):
         img_BGR = cv2.cvtColor(src_img, cv2.COLOR_GRAY2BGR)
-        bin_img = self.binarize(src_img, isInverted, kernel_size_for_opening=kernel_size_for_opening, opening_iterations=opening_iterations, kernel_size=kernel_size, erosion_iterations=erosion_iterations, dialte_iterations=dialte_iterations)
+        bin_img = self.binarize(src_img, isInverted, kernel_size_for_opening=kernel_size_for_opening, opening_iterations=opening_iterations, kernel_size_for_diaero=kernel_size_for_diaero, erosion_iterations=erosion_iterations, dialte_iterations=dialte_iterations)
         
         # sure background & sure foreground frmo bin_img
         kernel2 = np.ones((3,3),np.uint8)
@@ -165,8 +168,9 @@ class core_shell_analysis:
         return df
 
     def get_result_df(self, sampling=True, sampling_num=3, 
-                      kernel_size_for_opening_cell=2, opening_iterations_cell=1, kernel_size_cell=3, erosion_iterations_cell=0, dialte_iterations_cell=0,
-                      kernel_size_for_core=3, erosion_iterations_for_core=0, dialte_iterations_for_core=0):
+                      kernel_size_for_opening_cell=2, opening_iterations_cell=1, kernel_size_for_diaero_cell=3, erosion_iterations_cell=0, dialte_iterations_cell=0,
+                      kernel_size_for_opening_core=3, opening_iterations_core=1,
+                      erosion_iterations_for_core=0, dialte_iterations_for_core=0, kernel_size_for_diaero_core=1, manual_thresh_core=None):
         l_df = []
         sampling_conditions = self.sampling_conditions(sampling_num) if sampling else None
 
@@ -180,8 +184,11 @@ class core_shell_analysis:
 
             for frame in self.frames:
                 ROI_confirm, markers = self.get_roi(src_img=img_cell_ROIch[frame], isInverted=self.cell_isInverted, 
-                                                    kernel_size_for_opening=kernel_size_for_opening_cell, opening_iterations=opening_iterations_cell, kernel_size=kernel_size_cell, erosion_iterations=erosion_iterations_cell, dialte_iterations=dialte_iterations_cell)
-                core_bin_img = self.binarize(img_core_ROIch[frame], self.core_isInverted, kernel_size=kernel_size_for_core, erosion_iterations=erosion_iterations_for_core, dialte_iterations=dialte_iterations_for_core)
+                                                    kernel_size_for_opening=kernel_size_for_opening_cell, opening_iterations=opening_iterations_cell, kernel_size_for_diaero=kernel_size_for_diaero_cell, erosion_iterations=erosion_iterations_cell, dialte_iterations=dialte_iterations_cell)
+                core_bin_img = self.binarize(img_core_ROIch[frame], self.core_isInverted, 
+                                             kernel_size_for_opening=kernel_size_for_opening_core, opening_iterations=opening_iterations_core,
+                                             kernel_size_for_diaero=kernel_size_for_diaero_core, erosion_iterations=erosion_iterations_for_core, dialte_iterations=dialte_iterations_for_core, 
+                                             manual_thresh=manual_thresh_core)
                 df, core_markers, shell_markers = self.roi_results(markers, core_bin_img, dict_img_ch_measure, frame, position)
                 l_df.append(df)
 
